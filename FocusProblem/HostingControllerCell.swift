@@ -6,7 +6,6 @@ final class HostingControllerCell: UICollectionViewCell {
     
     private var hostingController: UIHostingController<AnyView>?
     
-    #if os(tvOS)
     override var canBecomeFocused: Bool { false }
 
     override var preferredFocusEnvironments: [UIFocusEnvironment] {
@@ -24,8 +23,7 @@ final class HostingControllerCell: UICollectionViewCell {
         let next = context.nextFocusedView.map { String(describing: type(of: $0)) } ?? "nil"
         print("\(kDebugPrefix) HostingControllerCell.didUpdateFocus: \(prev) → \(next)")
     }
-    #endif
-    
+
     func configure<Content: View>(rootView: Content, parentViewController: UIViewController?) {
         if let existing = hostingController {
             existing.willMove(toParent: nil)

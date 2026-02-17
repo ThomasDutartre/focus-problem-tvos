@@ -18,9 +18,7 @@ final class JumbotronUIKitCell: UICollectionViewCell {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    #if os(tvOS)
     override var canBecomeFocused: Bool { false }
-    #endif
 
     // MARK: - Setup
 

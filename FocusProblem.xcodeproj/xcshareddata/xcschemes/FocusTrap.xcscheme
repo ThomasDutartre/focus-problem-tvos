@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A9F433372F3F16A800BABC38"
-               BuildableName = "FocusTrap.app"
-               BlueprintName = "FocusTrap"
+               BuildableName = "FocusProblem.app"
+               BlueprintName = "FocusProblem"
                ReferencedContainer = "container:FocusProblem.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,8 +45,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A9F433372F3F16A800BABC38"
-            BuildableName = "FocusTrap.app"
-            BlueprintName = "FocusTrap"
+            BuildableName = "FocusProblem.app"
+            BlueprintName = "FocusProblem"
             ReferencedContainer = "container:FocusProblem.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -68,8 +68,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A9F433372F3F16A800BABC38"
-            BuildableName = "FocusTrap.app"
-            BlueprintName = "FocusTrap"
+            BuildableName = "FocusProblem.app"
+            BlueprintName = "FocusProblem"
             ReferencedContainer = "container:FocusProblem.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

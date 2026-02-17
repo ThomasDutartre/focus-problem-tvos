@@ -16,7 +16,6 @@ final class FocusProblemViewController: UIViewController {
         applySnapshot()
     }
 
-    #if os(tvOS)
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         setContentScrollView(collectionView, for: .top)
@@ -43,8 +42,7 @@ final class FocusProblemViewController: UIViewController {
         let next = focusDescription(context.nextFocusedView, in: collectionView)
         print("\(kDebugPrefix) didUpdateFocus: \(prev) → \(next)")
     }
-    #endif
-    
+
     // MARK: - Collection View Setup
     
     private func setupCollectionView() {

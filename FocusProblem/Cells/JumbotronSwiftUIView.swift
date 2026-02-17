@@ -37,7 +37,8 @@ struct JumbotronSwiftUIView: View {
                 FocusableButton(label: "Info", icon: "info.circle.fill", color: .gray)
                     .id("Info")
             }
-            
+            .focusSection()
+
             // Description
             Text(description)
                 .font(.body)
@@ -49,7 +50,6 @@ struct JumbotronSwiftUIView: View {
             RoundedRectangle(cornerRadius: 20)
                 .fill(Color.white.opacity(0.08))
         )
-        .focusSection()
     }
 }
 
@@ -59,11 +59,9 @@ private struct FocusableButton: View {
     let label: String
     let icon: String
     let color: Color
-    
-    #if os(tvOS)
+
     @FocusState private var isFocused: Bool
-    #endif
-    
+
     var body: some View {
         Button {
             print("[\(label)] tapped")
@@ -77,30 +75,19 @@ private struct FocusableButton: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
             .frame(minWidth: 160)
-            #if os(tvOS)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(isFocused ? color : color.opacity(0.3))
             )
             .scaleEffect(isFocused ? 1.1 : 1.0)
             .animation(.easeInOut(duration: 0.15), value: isFocused)
-            #else
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(color.opacity(0.3))
-            )
-            #endif
             .foregroundStyle(.white)
         }
-        #if os(tvOS)
         .buttonStyle(.card)
         .focused($isFocused)
         .onChange(of: isFocused) { _, newValue in
             print("🐛 [FocusProblem] FocusableButton '\(label)' isFocused → \(newValue)")
         }
-        #else
-        .buttonStyle(.plain)
-        #endif
     }
 }
 

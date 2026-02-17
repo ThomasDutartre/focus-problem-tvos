@@ -27,7 +27,6 @@ final class CardUIKitCell: UICollectionViewCell {
     
     func configure(title: String) { titleLabel.text = title }
     
-    #if os(tvOS)
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
         super.didUpdateFocus(in: context, with: coordinator)
         coordinator.addCoordinatedAnimations {
@@ -35,5 +34,4 @@ final class CardUIKitCell: UICollectionViewCell {
             self.transform = self.isFocused ? CGAffineTransform(scaleX: 1.05, y: 1.05) : .identity
         }
     }
-    #endif
 }
