@@ -5,15 +5,17 @@ nonisolated enum Section: Int, CaseIterable, Sendable {
     case jumbotronSwiftUIHC
     case jumbotronUIKit
     case jumbotronSwiftUI
+    case jumbotronSwiftUIReset
     case cardsUIKit
     
     var title: String {
         switch self {
-        case .cardsSwiftUI:       return "Section 0 — Cards (SwiftUI · UIHostingConfiguration)"
-        case .jumbotronSwiftUIHC: return "Section 1 — Jumbotron SwiftUI · UIHostingController"
-        case .jumbotronUIKit:     return "Section 2 — Jumbotron UIKit (focus OK)"
-        case .jumbotronSwiftUI:   return "Section 3 — Jumbotron SwiftUI · UIHostingConfiguration"
-        case .cardsUIKit:         return "Section 4 — Cards (UIKit)"
+        case .cardsSwiftUI:         return "Section 0 — Cards (SwiftUI · UIHostingConfiguration)"
+        case .jumbotronSwiftUIHC:   return "Section 1 — Jumbotron SwiftUI · UIHostingController"
+        case .jumbotronUIKit:       return "Section 2 — Jumbotron UIKit (focus OK)"
+        case .jumbotronSwiftUI:     return "Section 3 — Jumbotron SwiftUI · UIHostingConfiguration"
+        case .jumbotronSwiftUIReset: return "Section 3b — Jumbotron SwiftUI · UIHostingConfiguration (reset on reuse)"
+        case .cardsUIKit:           return "Section 4 — Cards (UIKit)"
         }
     }
 }

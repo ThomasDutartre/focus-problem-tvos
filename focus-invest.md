@@ -145,6 +145,22 @@ This was confirmed by runtime logs: only `@Environment(\.isFocused)` fires when 
 
 **Result**: The handler executes correctly (~15+ times during testing), the configuration is rebuilt on each call. But despite the complete rebuild, the `UIHostingContentView` still deregisters its virtual items after the `→ nil` transition. Recreating the configuration is not enough — the bug is in how `UIHostingContentView` manages its internal focus state, not in the configuration itself.
 
+### H11 — Pure UIKit app entry point (remove root SwiftUI `UIHostingController`) → REJECTED
+
+**Idea**: The `mismatched parentFocusEnvironment` could be caused by a conflict between the app's root SwiftUI `WindowGroup` (`@main` / `ContentView`, itself a root `UIHostingController`) and the `UIHostingConfiguration` inside the cells. By switching the app entry point to a pure UIKit lifecycle (`AppDelegate` + `SceneDelegate` setting the `UITabBarController` as `rootViewController`), the root SwiftUI hosting context is removed entirely.
+
+**Implementation**: Disabled `@main` on `FocusProblemApp`, added `AppDelegate` / `SceneDelegate`, added a custom `Info.plist` with `UIApplicationSceneManifest` pointing to the `SceneDelegate`, and referenced it via `INFOPLIST_FILE` in `project.pbxproj`. (Note: a traditional `AppDelegate`-only setup fails on modern tvOS SDK with `UIScene life cycle is required` — a `SceneDelegate` is mandatory.)
+
+**Result**: The exact same `mismatched parentFocusEnvironment` warnings and `Ignoring focus update request for ineligible environment` cascade appear, even with no root SwiftUI `UIHostingController` anywhere in the hierarchy. The bug is intrinsic to how `UIHostingConfiguration`/`UIHostingContentView` manages its virtual focus items — it is **not** caused by the app's root SwiftUI integration. Changes were reverted (back to SwiftUI `@main`).
+
+### H12 — Reset the SwiftUI view on cell reuse (`prepareForReuse`) → PARTIAL / REJECTED
+
+**Idea**: On `prepareForReuse()`, re-apply the `contentConfiguration` (a fresh `UIHostingConfiguration` with a new `JumbotronSwiftUIView` instance) to force `UIHostingContentView` to rebuild and re-register its virtual focus items.
+
+**Implementation**: `SwiftUIResetPassthroughCell` stores the SwiftUI view and re-assigns the content configuration on reuse (`jumbotronSwiftUIReset` section, Section 3b). `canBecomeFocused = false`.
+
+**Result**: Noticeably better than the plain `jumbotronSwiftUI` case — focus often works after a reuse cycle. But the behavior remains **non-deterministic**: it works, then stops working, then works again randomly after subsequent reuses. The same `mismatched parentFocusEnvironment` warnings still appear. Rebuilding on reuse mitigates but does not fix the underlying virtual-item deregistration bug, so it is not a reliable solution.
+
 ## Working solution
 
 **`UIHostingController`** via a custom cell (`HostingControllerCell`):
@@ -180,4 +196,4 @@ File an Apple Feedback with the title:
 
 > **UIHostingConfiguration: virtual focus items permanently deregistered after focus cycle on tvOS when cell's canBecomeFocused returns false**
 
-Include: tvOS version, the 10 tested hypotheses, the `-UIFocusLoggingEnabled YES` logs showing `(warning) No focusable items found.` and `mismatched parentFocusEnvironment`, and note that the problem does NOT occur with `UIHostingController` for the same SwiftUI content. Reference WWDC22 session 10072.
+Include: tvOS version, the 12 tested hypotheses, the `-UIFocusLoggingEnabled YES` logs showing `(warning) No focusable items found.` and `mismatched parentFocusEnvironment`, and note that the problem does NOT occur with `UIHostingController` for the same SwiftUI content. Reference WWDC22 session 10072.

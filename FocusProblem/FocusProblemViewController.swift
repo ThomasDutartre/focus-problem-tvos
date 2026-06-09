@@ -69,7 +69,7 @@ final class FocusProblemViewController: UIViewController {
             switch section {
             case .cardsUIKit, .cardsSwiftUI:
                 return CardSection.makeCardsSection()
-            case .jumbotronUIKit, .jumbotronSwiftUI, .jumbotronSwiftUIHC:
+            case .jumbotronUIKit, .jumbotronSwiftUI, .jumbotronSwiftUIReset, .jumbotronSwiftUIHC:
                 return JumbotronSection.makeJumbotronSection()
             }
         }
@@ -102,7 +102,7 @@ final class FocusProblemViewController: UIViewController {
             )
         }
         
-        // Jumbotron SwiftUI cell (UIHostingConfiguration)
+        // Jumbotron SwiftUI cell (UIHostingConfiguration) — cas d'origine du bug
         let swiftUIJumbotronRegistration = UICollectionView.CellRegistration<SwiftUIPassthroughCell, Item> { cell, _, _ in
             cell.contentConfiguration = UIHostingConfiguration {
                 JumbotronSwiftUIView(
@@ -111,6 +111,16 @@ final class FocusProblemViewController: UIViewController {
                 )
             }
             .margins(.all, 0)
+        }
+        
+        // Jumbotron SwiftUI cell (UIHostingConfiguration) — view stored & re-applied on reuse
+        let swiftUIJumbotronRegistrationBis = UICollectionView.CellRegistration<SwiftUIResetPassthroughCell, Item> { cell, _, _ in
+            cell.configure(
+                with: JumbotronSwiftUIView(
+                    title: "Podcast — SwiftUI (UIHostingConfiguration · reset on reuse)",
+                    description: "Embedded via UIHostingConfiguration. The SwiftUI view is stored and re-applied to contentConfiguration on every reuse."
+                )
+            )
         }
         
         // Jumbotron SwiftUI cell (UIHostingController)
@@ -144,6 +154,10 @@ final class FocusProblemViewController: UIViewController {
             case .jumbotronSwiftUI:
                 return collectionView.dequeueConfiguredReusableCell(
                     using: swiftUIJumbotronRegistration, for: indexPath, item: item
+                )
+            case .jumbotronSwiftUIReset:
+                return collectionView.dequeueConfiguredReusableCell(
+                    using: swiftUIJumbotronRegistrationBis, for: indexPath, item: item
                 )
             case .jumbotronSwiftUIHC:
                 return collectionView.dequeueConfiguredReusableCell(
@@ -185,8 +199,11 @@ final class FocusProblemViewController: UIViewController {
         // Section 2 — Jumbotron UIKit
         snapshot.appendItems([.jumbotronUIKit], toSection: .jumbotronUIKit)
         
-        // Section 3 — Jumbotron SwiftUI (UIHostingConfiguration)
+        // Section 3 — Jumbotron SwiftUI (UIHostingConfiguration) — cas d'origine du bug
         snapshot.appendItems([.jumbotronSwiftUI], toSection: .jumbotronSwiftUI)
+        
+        // Section 3b — Jumbotron SwiftUI (UIHostingConfiguration · reset on reuse)
+        snapshot.appendItems([.jumbotronSwiftUIReset], toSection: .jumbotronSwiftUIReset)
         
         // Section 4 — UIKit cards
         snapshot.appendItems(

@@ -12,7 +12,7 @@ enum JumbotronSection {
             widthDimension: .fractionalWidth(1.0),
             heightDimension: .estimated(500)
         )
-        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
+        let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
 
         let section = NSCollectionLayoutSection(group: group)
         section.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 60, bottom: 40, trailing: 60)
