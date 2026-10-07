@@ -9,7 +9,7 @@ struct JumbotronSwiftUIView: View {
     
     var body: some View {
         let _ = {
-            print("🐛 [FocusProblem] JumbotronSwiftUIView body evaluated — title: \(title), @Environment isFocused: \(envIsFocused)")
+            debugLog("🐛 [FocusProblem] JumbotronSwiftUIView body evaluated — title: \(title), @Environment isFocused: \(envIsFocused)")
         }()
         VStack(alignment: .leading, spacing: 20) {
             // Image placeholder
@@ -86,7 +86,7 @@ private struct FocusableButton: View {
         .buttonStyle(.card)
         .focused($isFocused)
         .onChange(of: isFocused) { _, newValue in
-            print("🐛 [FocusProblem] FocusableButton '\(label)' isFocused → \(newValue)")
+            debugLog("🐛 [FocusProblem] FocusableButton '\(label)' isFocused → \(newValue)")
         }
     }
 }

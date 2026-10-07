@@ -10,10 +10,10 @@ final class HostingControllerCell: UICollectionViewCell {
 
     override var preferredFocusEnvironments: [UIFocusEnvironment] {
         if let hcView = hostingController?.view {
-            print("\(kDebugPrefix) HostingControllerCell.preferredFocusEnvironments → hostingController.view (\(String(format: "%p", unsafeBitCast(hcView, to: Int.self))))")
+            debugLog("\(kDebugPrefix) HostingControllerCell.preferredFocusEnvironments → hostingController.view (\(String(format: "%p", unsafeBitCast(hcView, to: Int.self))))")
             return [hcView]
         }
-        print("\(kDebugPrefix) HostingControllerCell.preferredFocusEnvironments → super (no HC)")
+        debugLog("\(kDebugPrefix) HostingControllerCell.preferredFocusEnvironments → super (no HC)")
         return super.preferredFocusEnvironments
     }
 
@@ -21,7 +21,7 @@ final class HostingControllerCell: UICollectionViewCell {
         super.didUpdateFocus(in: context, with: coordinator)
         let prev = context.previouslyFocusedView.map { String(describing: type(of: $0)) } ?? "nil"
         let next = context.nextFocusedView.map { String(describing: type(of: $0)) } ?? "nil"
-        print("\(kDebugPrefix) HostingControllerCell.didUpdateFocus: \(prev) → \(next)")
+        debugLog("\(kDebugPrefix) HostingControllerCell.didUpdateFocus: \(prev) → \(next)")
     }
 
     func configure<Content: View>(rootView: Content, parentViewController: UIViewController?) {

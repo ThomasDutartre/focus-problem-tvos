@@ -20,6 +20,23 @@ final class FocusProblemViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         setContentScrollView(collectionView, for: .top)
+        if let mode = BenchConfig.mode, bench == nil {
+            let label = "\(appSetting("FOCUS_LAYOUT") ?? "default") workaround=\(SwiftUIPassthroughCell.workaround.rawValue)"
+            bench = BenchDriver(viewController: self, collectionView: collectionView, sections: sections, mode: mode, label: label)
+            bench?.start()
+        }
+    }
+
+    // MARK: - Bench
+
+    private var bench: BenchDriver?
+    var benchFocusTarget: IndexPath?
+
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        if let target = benchFocusTarget, let cell = collectionView.cellForItem(at: target) {
+            return [cell]
+        }
+        return super.preferredFocusEnvironments
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -33,7 +50,7 @@ final class FocusProblemViewController: UIViewController {
         let prev = focusDescription(context.previouslyFocusedView, in: collectionView, sections: sections)
         let next = focusDescription(context.nextFocusedView, in: collectionView, sections: sections)
         let heading = context.focusHeading
-        print("\(kDebugPrefix) shouldUpdateFocus: \(prev) → \(next) heading=\(heading)")
+        debugLog("\(kDebugPrefix) shouldUpdateFocus: \(prev) → \(next) heading=\(heading)")
         return super.shouldUpdateFocus(in: context)
     }
 
@@ -41,8 +58,8 @@ final class FocusProblemViewController: UIViewController {
         super.didUpdateFocus(in: context, with: coordinator)
         let prev = focusDescription(context.previouslyFocusedView, in: collectionView, sections: sections)
         let next = focusDescription(context.nextFocusedView, in: collectionView, sections: sections)
-        print("\(kDebugPrefix) didUpdateFocus: \(prev) → \(next)")
-        print(focusMarker(context.nextFocusedView, in: collectionView, sections: sections))
+        debugLog("\(kDebugPrefix) didUpdateFocus: \(prev) → \(next)")
+        debugLog(focusMarker(context.nextFocusedView, in: collectionView, sections: sections))
     }
 
     // MARK: - Collection View Setup
@@ -138,6 +155,17 @@ final class FocusProblemViewController: UIViewController {
             )
         }
 
+        // Jumbotron SwiftUI cell (UIHostingController, reused: only rootView replaced)
+        let swiftUIHCReusedRegistration = UICollectionView.CellRegistration<HostingControllerReusedCell, Item> { [weak self] cell, indexPath, _ in
+            cell.configure(
+                rootView: JumbotronSwiftUIView(
+                    title: "Podcast \(indexPath.section) — SwiftUI (UIHostingController · reused)",
+                    description: "Embedded via a reused UIHostingController."
+                ),
+                parentViewController: self
+            )
+        }
+
         let sections = sections
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) {
             collectionView, indexPath, item in
@@ -152,6 +180,7 @@ final class FocusProblemViewController: UIViewController {
                     using: uikitCardRegistration, for: indexPath, item: item
                 )
             case .jumbotron(_, let variant):
+                return Perf.shared.measure("dequeue.jumbotron") { () -> UICollectionViewCell in
                 switch variant {
                 case .uikit:
                     return collectionView.dequeueConfiguredReusableCell(
@@ -169,6 +198,11 @@ final class FocusProblemViewController: UIViewController {
                     return collectionView.dequeueConfiguredReusableCell(
                         using: swiftUIHCRegistration, for: indexPath, item: item
                     )
+                case .hostingControllerReused:
+                    return collectionView.dequeueConfiguredReusableCell(
+                        using: swiftUIHCReusedRegistration, for: indexPath, item: item
+                    )
+                }
                 }
             }
         }
@@ -210,7 +244,13 @@ final class FocusProblemViewController: UIViewController {
 // MARK: - UICollectionViewDelegate
 
 extension FocusProblemViewController: UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        guard let cell = cell as? SwiftUIPassthroughCell else { return }
+        Perf.shared.measure("delegate.willDisplay") { cell.willDisplay() }
+    }
+
     func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
-        (cell as? SwiftUIPassthroughCell)?.didEndDisplaying()
+        guard let cell = cell as? SwiftUIPassthroughCell else { return }
+        Perf.shared.measure("delegate.didEndDisplaying") { cell.didEndDisplaying() }
     }
 }

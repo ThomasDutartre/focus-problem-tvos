@@ -8,7 +8,7 @@ final class SwiftUIResetPassthroughCell: UICollectionViewCell {
     private var storedView: JumbotronSwiftUIView?
 
     override var canBecomeFocused: Bool {
-        print("\(kDebugPrefix) SwiftUIResetPassthroughCell.canBecomeFocused queried → false (ptr: \(String(format: "%p", unsafeBitCast(self, to: Int.self))))")
+        debugLog("\(kDebugPrefix) SwiftUIResetPassthroughCell.canBecomeFocused queried → false (ptr: \(String(format: "%p", unsafeBitCast(self, to: Int.self))))")
         return false
     }
 
@@ -32,7 +32,7 @@ final class SwiftUIResetPassthroughCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        print("\(kDebugPrefix) SwiftUIResetPassthroughCell.prepareForReuse — reset & re-apply stored JumbotronSwiftUIView")
+        debugLog("\(kDebugPrefix) SwiftUIResetPassthroughCell.prepareForReuse — reset & re-apply stored JumbotronSwiftUIView")
         contentConfiguration = nil
         applyConfiguration()
     }
@@ -41,6 +41,6 @@ final class SwiftUIResetPassthroughCell: UICollectionViewCell {
         super.didUpdateFocus(in: context, with: coordinator)
         let prev = context.previouslyFocusedView.map { String(describing: type(of: $0)) } ?? "nil"
         let next = context.nextFocusedView.map { String(describing: type(of: $0)) } ?? "nil"
-        print("\(kDebugPrefix) SwiftUIResetPassthroughCell.didUpdateFocus: \(prev) → \(next)")
+        debugLog("\(kDebugPrefix) SwiftUIResetPassthroughCell.didUpdateFocus: \(prev) → \(next)")
     }
 }

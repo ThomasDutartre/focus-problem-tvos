@@ -9,7 +9,7 @@ struct ContentView: View {
 
 struct TabBarControllerRepresentable: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UITabBarController {
-        let tabBarController = UITabBarController()
+        let tabBarController = FocusRedirectingTabBarController()
 
         // Wrap in UINavigationController like the real app
         let focusTrapVC = FocusProblemViewController()
@@ -26,4 +26,22 @@ struct TabBarControllerRepresentable: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UITabBarController, context: Context) {}
+}
+
+/// Lets the bench move focus programmatically from anywhere (including from the tab bar):
+/// a focus update request is only honored when issued by an environment containing the focused item.
+final class FocusRedirectingTabBarController: UITabBarController {
+    var focusRedirect: UIFocusEnvironment?
+
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        if let focusRedirect { return [focusRedirect] }
+        return super.preferredFocusEnvironments
+    }
+
+    func moveFocus(to environment: UIFocusEnvironment) {
+        focusRedirect = environment
+        setNeedsFocusUpdate()
+        updateFocusIfNeeded()
+        focusRedirect = nil
+    }
 }

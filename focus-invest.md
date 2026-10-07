@@ -223,32 +223,68 @@ The UIKit focus engine, which looks for focusable items in **off-screen** cells 
 
 ## Solutions
 
-Validated on the tvOS simulator (Apple TV 4K 3rd gen), with the stress layout (12 sections, recycling) and the default layout: 3+ full top→bottom→top cycles, slow (0.7 s) and fast (0.2 s) presses, left/right between SwiftUI buttons, Select, tab bar round trip → **0 `nil`, 0 skipped section, focus always ends on the SwiftUI buttons**. Without the workaround (`WORKAROUND=off`), the same scenario skips 4 of the 6 SwiftUI sections on the first sweep.
+Validated on the tvOS simulator with the remote (stress layout, 12 sections, recycling): full top→bottom→top cycles, slow (0.7 s) and fast (0.2 s) presses → **0 `nil`, 0 skipped section, focus always ends on the SwiftUI buttons**, for both recommended solutions below. Without the workaround (`WORKAROUND=off`), the same scenario skips 4 of the 6 SwiftUI sections on the first sweep.
 
-### Solution A — `UIHostingConfiguration` + `SwiftUIPassthroughCell` workaround (public API only)
+### Solution A — `UIHostingConfiguration` + `SwiftUIPassthroughCell` workaround (v2, public API only)
 
 See [SwiftUIPassthroughCell.swift](FocusProblem/SwiftUIPassthroughCell.swift):
 
 | Mechanism | Fixes |
 |---|---|
-| `canBecomeFocused` = "hosted content exposes no focusable item" (recursive walk of `focusItemContainer`) | section skipped (lazy content) |
-| On placeholder focus: rebuild the content + forward focus (retry every 50 ms while scrolling) | orphan containers, lazy content |
-| Rebuild in `prepareForReuse` and in `didEndDisplaying` (delegate → `cell.didEndDisplaying()`) | stale items → `nil` |
+| `didEndDisplaying` / `prepareForReuse` mark the content **stale**: `contentView.isUserInteractionEnabled = false`, so the focus engine ignores its stale items (no re-creation while scrolling) | stale items → `nil` |
+| `canBecomeFocused` = "content stale, or no focusable item exposed" (recursive walk of `focusItemContainer`, positive result cached) | section skipped (lazy content) |
+| When focus lands on the placeholder cell: rebuild the content **only now** if stale, then forward focus (retry every 50 ms while scrolling) | orphan containers, lazy content |
 | `preferredFocusEnvironments = [contentView]` | forward target |
 
 Requirements / trade-offs:
 - the collection view delegate must forward `didEndDisplaying` to the cell;
-- the SwiftUI content is rebuilt each time the cell leaves the screen → **local `@State` of the cell content is reset** (keep state in the model, as for any cell);
-- after a placeholder hop, focus lands on the SwiftUI content's **preferred** item (first button) rather than the geometrically closest one;
-- `remembersLastFocusedIndexPath = false` (unchanged).
+- on a recycled / scrolled-back cell, focus goes through the placeholder: **~60–430 ms during which no button is highlighted**, and the content is rebuilt then (local `@State` reset) — once per focus entry, not per scroll;
+- after a placeholder hop, focus lands on the content's **preferred** item (first button), not the geometrically closest one;
+- relies on observed `UIHostingContentView` behavior: re-validate on each tvOS release (`WORKAROUND=off` + stress layout).
 
-### Solution B — `UIHostingController` cell
+Do **not** override `focusItems(in:)` on the cell to hide items: UIKit then logs *"implements focusItemsInRect: - caching for linear focus movement is limited as long as this view is on screen"*.
 
-[HostingControllerCell](FocusProblem/HostingControllerCell.swift) also passes the stress test (2 full cycles with recycling, every section reached) with no workaround. Constraints unchanged: child view controller containment, `preferredFocusEnvironments → hostingController.view`, `remembersLastFocusedIndexPath = false`.
+### Solution B — `UIHostingController` reused per cell (recommended)
+
+[HostingControllerReusedCell](FocusProblem/HostingControllerReusedCell.swift): one `UIHostingController` per cell, created on first configure; on reuse only `rootView` is replaced (no view controller teardown). Focus goes **directly** to the SwiftUI buttons (no placeholder, no delay, no state reset by the workaround). Constraints: child view controller containment, `preferredFocusEnvironments → hostingController.view`, `remembersLastFocusedIndexPath = false`.
+
+The original [HostingControllerCell](FocusProblem/HostingControllerCell.swift) (new `UIHostingController` on every configure) works for focus but is expensive while scrolling (see below).
+
+## Performance (Apple TV AF-ATV-010, tvOS 27.0, Release build)
+
+Bench layout `FOCUS_LAYOUT=bench:<variant>` (60 sections: 40 SwiftUI jumbotrons + 20 UIKit card rows), `BENCH=all`, driven inside the app (no remote needed, works on a device): programmatic scroll top→bottom→top at 3000 pt/s, then 39 programmatic focus jumps. Settings can be forced through `FocusProblem/Bench/BenchSettings.swift` (takes precedence over env vars). Timings are also emitted as signposts (`FocusProblem` / `Perf`) for Instruments. Display at ~50 Hz.
+
+**Scroll (recycling cost)**
+
+| Variant | Hitch ratio | Hitches | Jumbotron dequeue avg | Extra work |
+|---|---|---|---|---|
+| UIKit only (reference) | 3.6 ms/s | 4 | 4.9 ms¹ | — |
+| UIHostingConfiguration, no workaround (bug) | 4.6–5.1 ms/s | 5–7 | 1.6 ms | — |
+| **A — UIHostingConfiguration + v2** | **3.6 ms/s** | 3 | 1.55 ms | none while scrolling |
+| UIHostingConfiguration + v1 (rebuild on didEndDisplaying) | 44.8 ms/s | 53 | 1.6 ms | rebuild 5.4 ms × 78 |
+| UIHostingConfiguration + v3 (rebuild on willDisplay) | 106 ms/s | 116 | 1.65 ms | rebuild 6.6 ms × 76 |
+| UIHostingController re-created per configure | 48.1 ms/s | 62 | 4.2 ms | — |
+| **B — UIHostingController reused** | **3.0 ms/s** | 3 | 1.18 ms | — |
+
+¹ includes the creation of the UIKit cells' view hierarchy.
+
+**Focus jumps (39 jumps through recycled cells)**
+
+| Variant | Landed in SwiftUI content | Per-jump cost | Notes |
+|---|---|---|---|
+| no workaround | 0 / 39 | 22.7 ms | focus ends on a neighbor card or `nil` |
+| A — v2 | 39 / 39 | 6.6 ms | placeholder hop 59 ms avg (85 max), rebuild 1.8 ms ×38, `canBecomeFocused` 0.18 ms ×198 |
+| v1 | 39 / 39 | 4.9 ms | + rebuild 19 ms on each `didEndDisplaying` |
+| UIHostingController re-created | 39 / 39 | 11.9 ms | dequeue 3.5 ms |
+| B — UIHostingController reused | 39 / 39 | 9.7 ms | no placeholder |
+
+(The frame metrics of the focus bench are dominated by the bench's own non-animated `scrollToItem` jumps and are not compared.)
 
 ## Recommendation
 
-- Short term: **Solution B** if you can afford view controller containment in cells (no hack, no state reset); **Solution A** if you want to stay on `UIHostingConfiguration` (public API only, but relies on observed `UIHostingContentView` behavior — re-validate on each tvOS release with the stress layout and `WORKAROUND=off`).
+- **Solution B (reused `UIHostingController`)** for heavy collection views: best scroll numbers (on par with UIKit), focus goes straight to the buttons, no hack relying on `UIHostingContentView` internals.
+- **Solution A (v2)** if you must stay on `UIHostingConfiguration`: same scroll cost as UIKit, but a visible 60–430 ms hop on recycled cells and a dependency on observed private behavior.
+- Avoid rebuilding the hosting content (v1/v3) or re-creating the `UIHostingController` on every configure: 10–30× more hitches while scrolling.
 - File an Apple Feedback:
 
 > **UIHostingConfiguration (tvOS): SwiftUI focus items missing for off-screen cells and stale after the content disappears — focus engine skips the cell or loses focus**
