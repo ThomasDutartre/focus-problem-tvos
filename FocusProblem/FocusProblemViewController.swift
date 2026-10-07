@@ -34,7 +34,6 @@ final class FocusProblemViewController: UIViewController {
         let next = focusDescription(context.nextFocusedView, in: collectionView, sections: sections)
         let heading = context.focusHeading
         print("\(kDebugPrefix) shouldUpdateFocus: \(prev) → \(next) heading=\(heading)")
-        probeFocusItems(in: collectionView, sections: sections, tag: "should")
         return super.shouldUpdateFocus(in: context)
     }
 
@@ -44,14 +43,6 @@ final class FocusProblemViewController: UIViewController {
         let next = focusDescription(context.nextFocusedView, in: collectionView, sections: sections)
         print("\(kDebugPrefix) didUpdateFocus: \(prev) → \(next)")
         print(focusMarker(context.nextFocusedView, in: collectionView, sections: sections))
-        probeFocusItems(in: collectionView, sections: sections, tag: "didUpdate")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            self?.runRemedyExperiment()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            guard let self else { return }
-            probeFocusItems(in: self.collectionView, sections: self.sections, tag: "+1s")
-        }
     }
 
     // MARK: - Collection View Setup
@@ -115,12 +106,12 @@ final class FocusProblemViewController: UIViewController {
             )
         }
 
-        // Jumbotron SwiftUI cell (UIHostingConfiguration) — cas d'origine du bug
+        // Jumbotron SwiftUI cell (UIHostingConfiguration) — cas d'origine du bug, corrigé par SwiftUIPassthroughCell
         let swiftUIJumbotronRegistration = UICollectionView.CellRegistration<SwiftUIPassthroughCell, Item> { cell, indexPath, _ in
             cell.contentConfiguration = UIHostingConfiguration {
                 JumbotronSwiftUIView(
                     title: "Podcast \(indexPath.section) — SwiftUI (UIHostingConfiguration)",
-                    description: "Embedded via UIHostingConfiguration. Focus becomes permanently broken after a navigation cycle."
+                    description: "Embedded via UIHostingConfiguration + SwiftUIPassthroughCell workaround. Set WORKAROUND=off to see the original bug."
                 )
             }
             .margins(.all, 0)
@@ -216,24 +207,10 @@ final class FocusProblemViewController: UIViewController {
     }
 }
 
-// MARK: - Remedy experiments (REMEDY env var)
+// MARK: - UICollectionViewDelegate
 
 extension FocusProblemViewController: UICollectionViewDelegate {
-    func runRemedyExperiment() {
-        let remedy = ProcessInfo.processInfo.environment["REMEDY"] ?? "none"
-        for case let cell as SwiftUIPassthroughCell in collectionView.visibleCells where !cell.hostedFocusItemsReady {
-            let ip = collectionView.indexPath(for: cell).map { "S\($0.section)" } ?? "?"
-            switch remedy {
-            case "updateConfig": cell.setNeedsUpdateConfiguration()
-            case "layout": cell.contentView.setNeedsLayout(); cell.contentView.layoutIfNeeded()
-            case "intrinsic": cell.contentView.invalidateIntrinsicContentSize()
-            case "reassign": let c = cell.contentConfiguration; cell.contentConfiguration = c
-            case "rebuild": let c = cell.contentConfiguration; cell.contentConfiguration = nil; cell.contentConfiguration = c
-            default: break
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                print("💊 \(ip) remedy=\(remedy) leavesAfter=\(cell.hostedFocusItemsReady)")
-            }
-        }
+    func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        (cell as? SwiftUIPassthroughCell)?.didEndDisplaying()
     }
 }

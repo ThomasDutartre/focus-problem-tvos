@@ -38,6 +38,15 @@ final class SwiftUIPassthroughCell: UICollectionViewCell {
         [contentView]
     }
 
+    /// Call from `collectionView(_:didEndDisplaying:forItemAt:)`.
+    /// Once its SwiftUI content has gone off screen (onDisappear), a content view keeps stale focus
+    /// items that vanish right after focus enters them when it comes back. Give it a fresh content
+    /// view now: until it is on screen again, the cell acts as a focus placeholder.
+    func didEndDisplaying() {
+        guard Self.workaroundEnabled else { return }
+        rebuildHostedContent()
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
         // Drop the previous hosting content view: it would otherwise keep exposing the focus items

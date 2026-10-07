@@ -56,6 +56,8 @@ With `UIHostingConfiguration`, after navigating focus in and out of the section 
 
 ### Root cause
 
+> **Update (H13–H19):** the analysis below was refined — see [Root cause (refined)](#root-cause-refined). The `mismatched parentFocusEnvironment` warnings are a red herring: they are also emitted for the `UIHostingController` section, which works.
+
 The `UIHostingContentView` (Apple's private internal view) manages **"virtual focus items"** — SwiftUI focusable elements invisible to UIKit. After a specific navigation cycle, these virtual items are **deregistered and never re-registered**. The UIKit focus engine can no longer find any focusable items in the cell.
 
 The Apple focus logs reveal a **`mismatched parentFocusEnvironment`** error on all virtual focus items just before the bug triggers. The items report their `parentFocusEnvironment` as the `_UIHostingView` (from UIHostingController in another section), but their `focusItemContainer` points to a different `UIKitFocusSectionResponderItem`. This hierarchy corruption causes the focus engine to mark all environments as "disappearing".
@@ -66,12 +68,17 @@ With `UIHostingController`, this does not happen because the hosting controller 
 
 - **POC**: `FocusProblem` — `UICollectionView` + `CompositionalLayout` + `DiffableDataSource`
 - **Architecture**: `UITabBarController` → `UINavigationController` → `FocusProblemViewController`
-- **5 sections**:
+- **6 sections** (default layout):
   - Section 0: Cards SwiftUI (UIHostingConfiguration) — simple focusable cells, focus works via `@Environment(\.isFocused)`
   - Section 1: Jumbotron SwiftUI (UIHostingController) — focus works correctly
   - Section 2: Jumbotron UIKit — focus works correctly
-  - Section 3: Jumbotron SwiftUI (UIHostingConfiguration) — **BUG: focus permanently broken**
+  - Section 3: Jumbotron SwiftUI (UIHostingConfiguration) — original bug, **fixed by the `SwiftUIPassthroughCell` workaround**
+  - Section 3b: Jumbotron SwiftUI (UIHostingConfiguration, reset on reuse — H12)
   - Section 4: Cards UIKit — focus works correctly
+- **Stress layout** (`FOCUS_LAYOUT=stress:<variant>`, variant = `hostingConfiguration`, `hostingController`, `hostingConfigurationReset`, `uikit`): 12 sections alternating UIKit sections and `<variant>` jumbotrons, so that a full top→bottom scroll recycles the cells.
+- **`WORKAROUND=off`** disables the `SwiftUIPassthroughCell` workaround to reproduce the original bug.
+- Both env vars are pre-declared (disabled) in the `FocusTrap` scheme.
+- Every focus change prints a compact marker `🎯 S<section>#<item> <kind> (<focused view type>)`.
 - **`remembersLastFocusedIndexPath = false`** (true causes a separate focus trap)
 - **`-UIFocusLoggingEnabled YES`** launch argument for system focus logs
 
@@ -161,39 +168,89 @@ This was confirmed by runtime logs: only `@Environment(\.isFocused)` fires when 
 
 **Result**: Noticeably better than the plain `jumbotronSwiftUI` case — focus often works after a reuse cycle. But the behavior remains **non-deterministic**: it works, then stops working, then works again randomly after subsequent reuses. The same `mismatched parentFocusEnvironment` warnings still appear. Rebuilding on reuse mitigates but does not fix the underlying virtual-item deregistration bug, so it is not a reliable solution.
 
-## Working solution
+### H13 — `selfSizingInvalidation = .disabled` → REJECTED
 
-**`UIHostingController`** via a custom cell (`HostingControllerCell`):
+**Idea**: `UIHostingConfiguration` cells auto-invalidate their size when SwiftUI content changes (focus → body re-evaluation → re-layout while focus lands).
 
-```swift
-final class HostingControllerCell: UICollectionViewCell {
-    private var hostingController: UIHostingController<AnyView>?
+**Result**: identical sequence. Not related to self-sizing.
 
-    override var canBecomeFocused: Bool { false }
+### H14 — `automaticallyUpdatesContentConfiguration = false` → REJECTED
 
-    override var preferredFocusEnvironments: [UIFocusEnvironment] {
-        if let hcView = hostingController?.view { return [hcView] }
-        return super.preferredFocusEnvironments
-    }
+**Idea**: the cell's configuration state change (focus) re-applies the `UIHostingConfiguration` and recreates the focus items.
 
-    func configure<V: View>(with view: V, parent: UIViewController?) {
-        // UIViewController containment: addChild, didMove(toParent:)
-        // ...
-    }
-}
-```
+**Result**: identical sequence.
 
-**Why it works**: `UIHostingController` is a full `UIFocusEnvironment` in the UIKit hierarchy. The focus engine can traverse it via `preferredFocusEnvironments`, and the hosting controller correctly maintains its virtual focus items across navigation cycles.
+### H15 — Force `layoutIfNeeded()` when the focus engine reads the cell's items → REJECTED
 
-**Constraints**:
-- `remembersLastFocusedIndexPath = false` (mandatory)
-- `preferredFocusEnvironments` pointing to `hostingController.view` (mandatory for upward navigation)
-- Proper UIViewController containment (`addChild` / `didMove(toParent:)`)
+**Idea**: the `UIHostingContentView` has not rendered yet when the focus engine queries it.
+
+**Result**: `contentView.focusItems(in:)` still returns 0 items after a synchronous layout. Layout is not what gates the items.
+
+### Diagnostic — focus items probe + reflection → ROOT CAUSE FOUND
+
+A probe on every focus change (public API: `focusItemContainer` / `focusItems(in:)` / `canBecomeFocused`, walked recursively) + a `Mirror` dump of `UIHostingContentView` (diagnostic only) show:
+
+1. **Lazy build**: `UIHostingContentView` has an internal `hasBeenVisible` flag. Until the cell has been on screen, the SwiftUI content is not built and **the cell exposes no focus item at all**. When the user navigates toward an off‑screen section, the focus engine materializes the cell (`_UIFocusPromiseItem`), finds nothing focusable, and **skips the section**. A `UIHostingController`'s `_UIHostingView` exposes its items even off screen — that's why it works.
+2. **Stale items after disappear / reuse**: after the SwiftUI content went through `onDisappear` (cell scrolled off screen, or recycled with another content), the content view keeps exposing **stale focus items**. The focus engine enters one of them, the content re-appears / re-renders, the stale items are deregistered → `Ignoring focus update request for disappearing focus environment` → **focus `→ nil`**.
+3. **Orphan containers**: in some of those cycles only the focus containers remain (`UIKitFocusSectionResponderItem`, `UIKitContainerFocusResponderItem<FocusStateBindingResponder>`) **without their focusable leaves** (`UIKitFocusableViewResponderItem`) — they never come back, even when the cell is fully on screen. This is the "permanently dead section".
+
+In all cases, a **fresh** `UIHostingContentView` (configuration set to `nil` then re-applied) that is rendered while on screen registers its items correctly.
+
+### H16 — Cell as focus placeholder while no SwiftUI item is exposed → CONFIRMED (part of the fix)
+
+`canBecomeFocused` returns `true` only while the hosted content exposes no focusable item (recursive public-API walk). The focus engine stops skipping the section: focus lands on the cell, the collection view scrolls it on screen, SwiftUI builds its content, and focus is then forwarded with `setNeedsFocusUpdate()` + `updateFocusIfNeeded()` (`preferredFocusEnvironments = [contentView]`). Focus requests are ignored while the collection view scroll-animates, so the forward is retried every 50 ms until focus actually left the cell.
+
+### H17 — Rebuild the hosted content when focus lands on the placeholder → CONFIRMED (part of the fix)
+
+Fixes the "orphan containers" case (3): the placeholder rebuilds the `UIHostingContentView` so the leaves are registered again.
+
+### H18 — Rebuild in `prepareForReuse` and in `didEndDisplaying` → CONFIRMED (part of the fix)
+
+Fixes the "stale items" case (2). Rebuilding in `willDisplay` is **too late**: the focus engine enters the stale items of the off-screen cell before `willDisplay` is called. Rebuilding as soon as the cell leaves the screen (`collectionView(_:didEndDisplaying:forItemAt:)`) means an off-screen cell never exposes stale items — it is a placeholder until it is displayed again.
+
+### H19 — `@Environment(\.isFocused)` in a `ButtonStyle` instead of `@FocusState` / `.buttonStyle(.plain)` instead of `.card` → REJECTED
+
+Neither the `FocusState` binding nor the card button style is involved: identical behavior.
+
+## Root cause (refined)
+
+`UIHostingContentView` (behind `UIHostingConfiguration`) manages the lifecycle of its SwiftUI focus items according to the **display lifecycle of the cell**, not according to the focus engine's needs:
+- it exposes **nothing** before the cell has been displayed (lazy content),
+- it keeps exposing **stale** items after the content disappeared, which vanish as soon as focus enters them,
+- it can end up with focus containers **without focusable leaves**, permanently.
+
+The UIKit focus engine, which looks for focusable items in **off-screen** cells when navigating, therefore either skips the cell or loses focus (`→ nil`). `UIHostingController` doesn't have this lazy behavior.
+
+## Solutions
+
+Validated on the tvOS simulator (Apple TV 4K 3rd gen), with the stress layout (12 sections, recycling) and the default layout: 3+ full top→bottom→top cycles, slow (0.7 s) and fast (0.2 s) presses, left/right between SwiftUI buttons, Select, tab bar round trip → **0 `nil`, 0 skipped section, focus always ends on the SwiftUI buttons**. Without the workaround (`WORKAROUND=off`), the same scenario skips 4 of the 6 SwiftUI sections on the first sweep.
+
+### Solution A — `UIHostingConfiguration` + `SwiftUIPassthroughCell` workaround (public API only)
+
+See [SwiftUIPassthroughCell.swift](FocusProblem/SwiftUIPassthroughCell.swift):
+
+| Mechanism | Fixes |
+|---|---|
+| `canBecomeFocused` = "hosted content exposes no focusable item" (recursive walk of `focusItemContainer`) | section skipped (lazy content) |
+| On placeholder focus: rebuild the content + forward focus (retry every 50 ms while scrolling) | orphan containers, lazy content |
+| Rebuild in `prepareForReuse` and in `didEndDisplaying` (delegate → `cell.didEndDisplaying()`) | stale items → `nil` |
+| `preferredFocusEnvironments = [contentView]` | forward target |
+
+Requirements / trade-offs:
+- the collection view delegate must forward `didEndDisplaying` to the cell;
+- the SwiftUI content is rebuilt each time the cell leaves the screen → **local `@State` of the cell content is reset** (keep state in the model, as for any cell);
+- after a placeholder hop, focus lands on the SwiftUI content's **preferred** item (first button) rather than the geometrically closest one;
+- `remembersLastFocusedIndexPath = false` (unchanged).
+
+### Solution B — `UIHostingController` cell
+
+[HostingControllerCell](FocusProblem/HostingControllerCell.swift) also passes the stress test (2 full cycles with recycling, every section reached) with no workaround. Constraints unchanged: child view controller containment, `preferredFocusEnvironments → hostingController.view`, `remembersLastFocusedIndexPath = false`.
 
 ## Recommendation
 
-File an Apple Feedback with the title:
+- Short term: **Solution B** if you can afford view controller containment in cells (no hack, no state reset); **Solution A** if you want to stay on `UIHostingConfiguration` (public API only, but relies on observed `UIHostingContentView` behavior — re-validate on each tvOS release with the stress layout and `WORKAROUND=off`).
+- File an Apple Feedback:
 
-> **UIHostingConfiguration: virtual focus items permanently deregistered after focus cycle on tvOS when cell's canBecomeFocused returns false**
+> **UIHostingConfiguration (tvOS): SwiftUI focus items missing for off-screen cells and stale after the content disappears — focus engine skips the cell or loses focus**
 
-Include: tvOS version, the 12 tested hypotheses, the `-UIFocusLoggingEnabled YES` logs showing `(warning) No focusable items found.` and `mismatched parentFocusEnvironment`, and note that the problem does NOT occur with `UIHostingController` for the same SwiftUI content. Reference WWDC22 session 10072.
+Include: tvOS version, the stress layout (`FOCUS_LAYOUT=stress:hostingConfiguration WORKAROUND=off`), the `-UIFocusLoggingEnabled YES` logs, the facts that `contentView.focusItems(in:)` is empty for a never-displayed cell (`hasBeenVisible == false`) and that only containers without `UIKitFocusableViewResponderItem` leaves remain after some cycles, and that `UIHostingController` doesn't have the issue. Reference WWDC22 session 10072.
