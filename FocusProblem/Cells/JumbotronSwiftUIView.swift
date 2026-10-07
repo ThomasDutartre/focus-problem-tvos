@@ -30,7 +30,7 @@ struct JumbotronSwiftUIView: View {
             
             // Buttons row
             HStack(spacing: 20) {
-                FocusableButton(label: "Play", icon: "play.fill", color: .blue)
+                FocusableButton(label: "Play \(title.prefix(10))", icon: "play.fill", color: .blue)
                     .id("Play")
                 FocusableButton(label: "Favorite", icon: "heart.fill", color: .pink)
                     .id("Favorite")
@@ -55,7 +55,83 @@ struct JumbotronSwiftUIView: View {
 
 // MARK: - Focusable Button
 
+/// `FOCUS_TRACKING` env var: `focusState` (default, `.focused($isFocused)`) or `env`
+/// (no `@FocusState`: focus read via `@Environment(\.isFocused)` inside a ButtonStyle).
+private let focusTracking = ProcessInfo.processInfo.environment["FOCUS_TRACKING"] ?? "focusState"
+
 private struct FocusableButton: View {
+    let label: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        content
+            .onAppear { print("👁 '\(label)' onAppear") }
+            .onDisappear { print("👁 '\(label)' onDisappear") }
+    }
+
+    @ViewBuilder private var content: some View {
+        if focusTracking == "env" {
+            Button {
+                print("[\(label)] tapped")
+            } label: {
+                ButtonLabel(label: label, icon: icon)
+            }
+            .buttonStyle(EnvFocusButtonStyle(label: label, color: color))
+        } else {
+            FocusStateButton(label: label, icon: icon, color: color)
+        }
+    }
+}
+
+private struct ButtonLabel: View {
+    let label: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+            Text(label)
+                .font(.headline)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+        .frame(minWidth: 160)
+        .foregroundStyle(.white)
+    }
+}
+
+private struct EnvFocusButtonStyle: ButtonStyle {
+    let label: String
+    let color: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        EnvFocusBody(configuration: configuration, label: label, color: color)
+    }
+
+    private struct EnvFocusBody: View {
+        let configuration: ButtonStyleConfiguration
+        let label: String
+        let color: Color
+        @Environment(\.isFocused) private var isFocused
+
+        var body: some View {
+            configuration.label
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(isFocused ? color : color.opacity(0.3))
+                )
+                .scaleEffect(isFocused ? 1.1 : 1.0)
+                .animation(.easeInOut(duration: 0.15), value: isFocused)
+                .onChange(of: isFocused) { _, newValue in
+                    print("🐛 [FocusProblem] FocusableButton '\(label)' isFocused → \(newValue)")
+                }
+        }
+    }
+}
+
+private struct FocusStateButton: View {
     let label: String
     let icon: String
     let color: Color
@@ -66,27 +142,30 @@ private struct FocusableButton: View {
         Button {
             print("[\(label)] tapped")
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.title3)
-                Text(label)
-                    .font(.headline)
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 14)
-            .frame(minWidth: 160)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isFocused ? color : color.opacity(0.3))
-            )
-            .scaleEffect(isFocused ? 1.1 : 1.0)
-            .animation(.easeInOut(duration: 0.15), value: isFocused)
-            .foregroundStyle(.white)
+            ButtonLabel(label: label, icon: icon)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(isFocused ? color : color.opacity(0.3))
+                )
+                .scaleEffect(isFocused ? 1.1 : 1.0)
+                .animation(.easeInOut(duration: 0.15), value: isFocused)
         }
-        .buttonStyle(.card)
+        .modifier(DebugButtonStyle())
         .focused($isFocused)
         .onChange(of: isFocused) { _, newValue in
             print("🐛 [FocusProblem] FocusableButton '\(label)' isFocused → \(newValue)")
+        }
+    }
+}
+
+/// `BUTTON_STYLE` env var: `card` (default), `plain`, `borderless`, `automatic`.
+private struct DebugButtonStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        switch ProcessInfo.processInfo.environment["BUTTON_STYLE"] ?? "card" {
+        case "plain":      content.buttonStyle(.plain)
+        case "borderless": content.buttonStyle(.borderless)
+        case "automatic":  content.buttonStyle(.automatic)
+        default:           content.buttonStyle(.card)
         }
     }
 }

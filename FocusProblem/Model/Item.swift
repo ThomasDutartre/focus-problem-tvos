@@ -1,7 +1,4 @@
 nonisolated enum Item: Hashable, Sendable {
     case card(id: Int, section: Int)
-    case jumbotronUIKit
-    case jumbotronSwiftUI
-    case jumbotronSwiftUIReset
-    case jumbotronSwiftUIHC
+    case jumbotron(section: Int, variant: JumbotronVariant)
 }
