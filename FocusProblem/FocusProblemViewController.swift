@@ -52,6 +52,8 @@ final class FocusProblemViewController: UIViewController {
         view.addSubview(collectionView)
         collectionView.remembersLastFocusedIndexPath = false
 
+        collectionView.delegate = self
+
         NSLayoutConstraint.activate([
             collectionView.topAnchor.constraint(equalTo: view.topAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -104,13 +106,19 @@ final class FocusProblemViewController: UIViewController {
         
         // Jumbotron SwiftUI cell (UIHostingConfiguration) — cas d'origine du bug
         let swiftUIJumbotronRegistration = UICollectionView.CellRegistration<SwiftUIPassthroughCell, Item> { cell, _, _ in
-            cell.contentConfiguration = UIHostingConfiguration {
-                JumbotronSwiftUIView(
-                    title: "Podcast — SwiftUI (UIHostingConfiguration)",
-                    description: "Embedded via UIHostingConfiguration. Focus becomes permanently broken after a navigation cycle."
-                )
+            let hadConfiguration = cell.contentConfiguration != nil   // read before assigning
+            let make: () -> UIContentConfiguration = {
+                UIHostingConfiguration {
+                    JumbotronSwiftUIView(
+                        title: "Podcast — SwiftUI (UIHostingConfiguration)",
+                        description: "Embedded via UIHostingConfiguration. Focus is handed over by SwiftUIPassthroughCell."
+                    )
+                }
+                .margins(.all, 0)
             }
-            .margins(.all, 0)
+            cell.makeContentConfiguration = make
+            cell.contentConfiguration = make()
+            cell.didConfigure(replacedExistingContent: hadConfiguration)
         }
         
         // Jumbotron SwiftUI cell (UIHostingConfiguration) — view stored & re-applied on reuse
@@ -212,5 +220,17 @@ final class FocusProblemViewController: UIViewController {
         )
         
         dataSource.apply(snapshot, animatingDifferences: false)
+    }
+}
+
+// MARK: - Display tracking
+
+extension FocusProblemViewController: UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        (cell as? SwiftUIPassthroughCell)?.cellWillDisplay()
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        (cell as? SwiftUIPassthroughCell)?.cellDidEndDisplaying()
     }
 }
